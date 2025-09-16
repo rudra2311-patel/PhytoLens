@@ -2,7 +2,7 @@ import 'package:agriscan_pro/utils/plant_disease_classifier.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
- // Ensure this path is correct
+import '../services/database_helper.dart'; // Import your new database helper
 
 class TestScreen extends StatefulWidget {
   const TestScreen({super.key});
@@ -13,6 +13,7 @@ class TestScreen extends StatefulWidget {
 
 class _TestScreenState extends State<TestScreen> {
   final PlantDiseaseClassifier _classifier = PlantDiseaseClassifier();
+  final DatabaseHelper _dbHelper = DatabaseHelper();
 
   String _status = 'Ready to test';
   String _result = '';
@@ -45,10 +46,12 @@ class _TestScreenState extends State<TestScreen> {
   }
 
   /// Run test classification
+  /// Run test classification
   Future<void> _runTest() async {
     if (!_modelLoaded) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Model not loaded yet!')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Model not loaded yet!')));
       return;
     }
 
@@ -59,7 +62,7 @@ class _TestScreenState extends State<TestScreen> {
     });
 
     try {
-      // The screen is now responsible for loading the image data.
+      // 1. Load the test image from assets
       final byteData = await rootBundle.load(_testImagePath);
       final testImage = img.decodeImage(byteData.buffer.asUint8List());
 
@@ -67,19 +70,47 @@ class _TestScreenState extends State<TestScreen> {
         setState(() {
           _isLoading = false;
           _status = 'Error: Could not load test image';
-          _result =
-              'Make sure $_testImagePath exists in your assets folder.';
+          _result = 'Make sure $_testImagePath exists in your assets folder.';
         });
         return;
       }
 
-      // Run classification
-      final prediction = await _classifier.classifyPlantDisease(testImage);
+      // 2. Get the full prediction string from your AI classifier
+      final fullPredictionString = await _classifier.classifyPlantDisease(
+        testImage,
+      );
 
+      // --- FIX START ---
+      // 3. Extract ONLY the disease name from the full string for the database query.
+      // It splits "Tomato___Late_blight (97.8% confidence)" into two parts and takes the first one.
+      final diseaseName = fullPredictionString.split('(').first.trim();
+      // --- FIX END ---
+
+      // 4. Get the detailed advice from your database using the clean name
+      final diseaseInfo = await _dbHelper.getDisease(diseaseName);
+
+      // 5. Update the UI with the final results
       setState(() {
         _isLoading = false;
         _status = 'Classification completed!';
-        _result = prediction;
+        if (diseaseInfo != null) {
+          _result =
+              '''
+Prediction: $fullPredictionString
+
+Symptoms:
+${diseaseInfo.symptoms}
+
+Treatment:
+${diseaseInfo.treatment}
+
+Prevention:
+${diseaseInfo.prevention}
+''';
+        } else {
+          _result =
+              "Prediction: $fullPredictionString\n\n(Details not found in database)";
+        }
       });
     } catch (e) {
       setState(() {
@@ -90,15 +121,11 @@ class _TestScreenState extends State<TestScreen> {
     }
   }
 
-  // --- FIX START ---
-  // The dispose method on the classifier is not strictly necessary for this test screen,
-  // so we can remove the call to it to fix the error.
   @override
   void dispose() {
-    // _classifier.dispose(); // This line is removed
+    _classifier.dispose();
     super.dispose();
   }
-  // --- FIX END ---
 
   @override
   Widget build(BuildContext context) {
@@ -181,63 +208,33 @@ class _TestScreenState extends State<TestScreen> {
 
             // Results Card
             if (_result.isNotEmpty)
-              Card(
-                color: Colors.blue.shade50,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      Icon(Icons.analytics, color: Colors.blue, size: 48),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Prediction Result',
-                        style: Theme.of(context).textTheme.titleLarge,
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Card(
+                    color: Colors.blue.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        children: [
+                          Icon(Icons.analytics, color: Colors.blue, size: 48),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Prediction Result',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _result,
+                            textAlign: TextAlign.left,
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(color: Colors.blue.shade800),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _result,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade800,
-                            ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
-
-            const Spacer(),
-
-            // Instructions
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Test Instructions:',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '1. Ensure your model is in assets/models/',
-                  ),
-                  const Text('2. Ensure your labels.txt is in assets/models/'),
-                  const Text('3. Ensure your test image is in assets/test_images/'),
-                  const Text('4. Tap the test button to run classification'),
-                ],
-              ),
-            ),
           ],
         ),
       ),
