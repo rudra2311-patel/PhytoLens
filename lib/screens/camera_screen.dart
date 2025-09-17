@@ -1,8 +1,11 @@
+import 'dart:io';
+import 'package:agriscan_pro/services/database_helper.dart';
+import 'package:agriscan_pro/utils/plant_disease_classifier.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 import 'results_screen.dart';
-import '../utils/constants.dart';
-import '../widgets/common_widgets.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -12,161 +15,142 @@ class CameraScreen extends StatefulWidget {
 }
 
 class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
-  CameraController? _controller;
+  CameraController? _cameraController;
   List<CameraDescription> _cameras = [];
   bool _isCameraInitialized = false;
   bool _isLoading = true;
-  String _errorMessage = '';
+  final String _errorMessage = '';
+
+  // AI Integration
+  bool _isProcessing = false;
+  final PlantDiseaseClassifier _classifier = PlantDiseaseClassifier();
+  final DatabaseHelper _databaseHelper = DatabaseHelper();
+  final bool _isModelLoaded = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initializeCamera();
+    _initializeServices();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _disposeCamera();
+    _cameraController?.dispose();
+    _classifier.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final CameraController? cameraController = _controller;
-
-    if (cameraController == null || !cameraController.value.isInitialized) {
-      return;
-    }
-
+    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
     if (state == AppLifecycleState.inactive) {
-      cameraController.dispose();
+      _cameraController!.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      _initializeCamera();
+      _initializeCamera(_cameraController!.description);
     }
   }
 
-  Future<void> _initializeCamera() async {
-    try {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = '';
-      });
+  Future<void> _initializeServices() async {
+    setState(() => _isLoading = true);
+    await _classifier.loadModel();
+    await _initializeCamera();
+    setState(() => _isLoading = false);
+  }
 
+  Future<void> _initializeCamera([CameraDescription? cameraDescription]) async {
+    if (cameraDescription == null) {
       _cameras = await availableCameras();
-      
       if (_cameras.isEmpty) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'No cameras available on this device';
-        });
+        _showErrorSnackBar('No cameras found.');
         return;
       }
-
-      // Find back camera or use first available
-      CameraDescription camera = _cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
-        orElse: () => _cameras.first,
-      );
-
-      _controller = CameraController(
-        camera,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
-
-      await _controller!.initialize();
-
-      if (mounted) {
-        setState(() {
-          _isCameraInitialized = true;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'Failed to initialize camera: ${e.toString()}';
-        });
-      }
+      cameraDescription = _cameras.firstWhere(
+          (cam) => cam.lensDirection == CameraLensDirection.back,
+          orElse: () => _cameras.first);
     }
-  }
 
-  void _disposeCamera() {
-    _controller?.dispose();
-    _controller = null;
-    _isCameraInitialized = false;
-  }
-
-  Future<void> _takePicture() async {
-    if (_controller == null || !_controller!.value.isInitialized) {
-      _showErrorSnackBar('Camera not ready');
-      return;
-    }
+    _cameraController =
+        CameraController(cameraDescription, ResolutionPreset.high, enableAudio: false);
 
     try {
-      LoadingDialog.show(context, 'Capturing image...');
+      await _cameraController!.initialize();
+      if (mounted) setState(() => _isCameraInitialized = true);
+    } catch (e) {
+      _showErrorSnackBar('Failed to initialize camera: $e');
+    }
+  }
+  
+  // --- THIS IS THE MAINLY CORRECTED FUNCTION ---
+  Future<void> _processImage(String imagePath) async {
+    setState(() => _isProcessing = true);
 
-      final XFile image = await _controller!.takePicture();
+    try {
+      final imageBytes = await File(imagePath).readAsBytes();
+      final img.Image? decodedImage = img.decodeImage(imageBytes);
+      if (decodedImage == null) throw Exception('Failed to decode image.');
 
+      // Get the single prediction string from the classifier
+      final String diseaseName = await _classifier.classifyPlantDisease(decodedImage);
+      
+      if (diseaseName.startsWith('Error:')) {
+        throw Exception(diseaseName);
+      }
+      
+      final Disease? diseaseInfo = await _databaseHelper.getDisease(diseaseName);
+      
       if (mounted) {
-        LoadingDialog.hide(context);
-        
-        // Navigate to results screen
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => ResultsScreen(
-              imagePath: image.path,
+              imagePath: imagePath,
+              prediction: diseaseName, // Pass the clean name
+              confidence: 0.0, // We no longer have confidence, so we pass 0.0
+              diseaseInfo: diseaseInfo,
             ),
           ),
         );
       }
     } catch (e) {
-      if (mounted) {
-        LoadingDialog.hide(context);
-        _showErrorSnackBar('Failed to capture image: ${e.toString()}');
+      _showErrorSnackBar('Analysis failed: $e');
+    } finally {
+      if(mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _takePicture() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      _showErrorSnackBar('Camera not ready.');
+      return;
+    }
+    try {
+      final XFile picture = await _cameraController!.takePicture();
+      await _processImage(picture.path);
+    } catch (e) {
+      _showErrorSnackBar('Failed to take picture: $e');
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    try {
+      final XFile? pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (pickedFile != null) {
+        await _processImage(pickedFile.path);
       }
+    } catch (e) {
+      _showErrorSnackBar('Failed to pick image: $e');
     }
   }
 
   void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(message),
-        backgroundColor: AppColors.error,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
-  void _showErrorDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(AppStrings.cameraError),
-        content: Text(_errorMessage),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Go back to home
-            },
-            child: const Text('OK'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _initializeCamera();
-            },
-            child: const Text('Retry'),
-          ),
-        ],
-      ),
-    );
+        backgroundColor: Colors.red,
+      ));
+    }
   }
 
   @override
@@ -174,201 +158,68 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text(AppStrings.cameraTitle),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
+        title: const Text('Scan Crop'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
       ),
       body: _buildBody(),
     );
   }
 
   Widget _buildBody() {
-    if (_isLoading) {
-      return _buildLoadingView();
-    } else if (_errorMessage.isNotEmpty) {
-      return _buildErrorView();
-    } else if (_isCameraInitialized) {
-      return _buildCameraView();
-    } else {
-      return _buildNotAvailableView();
+    if (!_isCameraInitialized || _isLoading) {
+      return const Center(child: CircularProgressIndicator());
     }
-  }
-
-  Widget _buildLoadingView() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(color: Colors.white),
-          SizedBox(height: 16),
-          Text(
-            AppStrings.initializingCamera,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorView() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showErrorDialog();
-    });
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.error_outline,
-            size: 64,
-            color: Colors.red,
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              _errorMessage,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotAvailableView() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.camera_alt,
-            size: 64,
-            color: Colors.white54,
-          ),
-          SizedBox(height: 16),
-          Text(
-            AppStrings.cameraNotAvailable,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCameraView() {
     return Stack(
+      fit: StackFit.expand,
       children: [
-        // Camera Preview
-        Positioned.fill(
-          child: AspectRatio(
-            aspectRatio: _controller!.value.aspectRatio,
-            child: CameraPreview(_controller!),
-          ),
-        ),
-
-        // Instructions Overlay
-        Positioned(
-          top: 40,
-          left: 20,
-          right: 20,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.7),
-              borderRadius: BorderRadius.circular(AppDimensions.borderRadius),
-            ),
-            child: const Text(
-              AppStrings.cameraInstructions,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
+        CameraPreview(_cameraController!),
+        if (_isProcessing)
+          Container(
+            color: Colors.black.withOpacity(0.5),
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Colors.white),
+                  SizedBox(height: 16),
+                  Text('Analyzing...', style: TextStyle(color: Colors.white)),
+                ],
               ),
-              textAlign: TextAlign.center,
             ),
           ),
-        ),
-
-        // Camera Controls
-        Positioned(
-          bottom: 40,
-          left: 0,
-          right: 0,
-          child: _buildCameraControls(),
-        ),
+        _buildControls(),
       ],
     );
   }
 
-  Widget _buildCameraControls() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
+  Widget _buildControls() {
+    return Positioned(
+      bottom: 30,
+      left: 20,
+      right: 20,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Gallery placeholder (for future implementation)
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-            ),
-            child: const Icon(
-              Icons.photo_library,
-              color: Colors.white,
-              size: 28,
-            ),
+          IconButton(
+            icon: const Icon(Icons.photo_library, color: Colors.white, size: 32),
+            onPressed: _pickFromGallery,
           ),
-
-          // Capture Button
           GestureDetector(
             onTap: _takePicture,
             child: Container(
-              width: 80,
-              height: 80,
+              width: 70,
+              height: 70,
               decoration: BoxDecoration(
-                color: Colors.white,
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.primary,
-                  width: 4,
-                ),
-              ),
-              child: const Icon(
-                Icons.camera_alt,
-                size: 40,
-                color: AppColors.primary,
+                color: Colors.white,
+                border: Border.all(color: Colors.green, width: 4),
               ),
             ),
           ),
-
-          // Switch Camera placeholder (for future implementation)
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-            ),
-            child: const Icon(
-              Icons.flip_camera_android,
-              color: Colors.white,
-              size: 28,
-            ),
+          IconButton(
+            icon: const Icon(Icons.flip_camera_ios, color: Colors.white, size: 32),
+            onPressed: () { /* TODO: Implement camera flip */ },
           ),
         ],
       ),
