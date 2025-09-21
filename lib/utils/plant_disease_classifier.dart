@@ -10,7 +10,8 @@ class PlantDiseaseClassifier {
   bool _isModelLoaded = false;
 
   // Use the final, correct model name from your training script.
-  static const String modelPath = 'assets/models/plant_disease_rudra_model.tflite';
+  static const String modelPath =
+      'assets/models/plant_disease_rudra_model.tflite';
   static const String labelsPath = 'assets/models/labels.txt';
 
   // Model configurations from your notebook.
@@ -84,10 +85,10 @@ class PlantDiseaseClassifier {
 
       // Convert the top score to a confidence percentage using softmax.
       final probabilities = _softmax(results);
-      String confidencePercent = (probabilities[maxIndex] * 100).toStringAsFixed(1);
-      
-      return '$className ($confidencePercent% confidence)';
+      String confidencePercent = (probabilities[maxIndex] * 100)
+          .toStringAsFixed(1);
 
+      return className;
     } catch (e) {
       print('❌ Error during classification: $e');
       return 'Error: Classification failed - $e';
@@ -116,7 +117,7 @@ class PlantDiseaseClassifier {
         inputBytes[bufferIndex++] = img.getBlue(pixel).toDouble();
       }
     }
-    
+
     // --- FIX ---
     // The interpreter expects a flat list (Float32List). The reshape happens
     // right before running the interpreter.
