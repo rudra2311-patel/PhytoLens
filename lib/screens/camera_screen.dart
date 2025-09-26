@@ -91,13 +91,21 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final img.Image? decodedImage = img.decodeImage(imageBytes);
       if (decodedImage == null) throw Exception('Failed to decode image.');
 
-      // Get the single prediction string from the classifier
-      final String diseaseName = await _classifier.classifyPlantDisease(decodedImage);
+      // This now correctly receives a Map
+      final Map<String, double> predictions = await _classifier.classifyPlantDisease(decodedImage);
       
-      if (diseaseName.startsWith('Error:')) {
-        throw Exception(diseaseName);
+      if (predictions.isEmpty) {
+        throw Exception('Classification failed: Model returned no predictions');
       }
+
+      // Find the top prediction from the Map
+      final topPredictionEntry = predictions.entries.reduce((a, b) => a.value > b.value ? a : b);
+      final String diseaseName = topPredictionEntry.key;
+      final double confidence = topPredictionEntry.value;
+      print('DATABASE LOOKUP FOR: ---"$diseaseName"---');
       
+      print('🎯 Top prediction: $diseaseName (${(confidence * 100).toStringAsFixed(1)}%)');
+
       final Disease? diseaseInfo = await _databaseHelper.getDisease(diseaseName);
       
       if (mounted) {
@@ -107,7 +115,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             builder: (context) => ResultsScreen(
               imagePath: imagePath,
               prediction: diseaseName, // Pass the clean name
-              confidence: 0.0, // We no longer have confidence, so we pass 0.0
+              confidence: confidence, // Pass the real confidence
               diseaseInfo: diseaseInfo,
             ),
           ),
