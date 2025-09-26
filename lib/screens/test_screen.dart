@@ -1,8 +1,8 @@
+import 'package:agriscan_pro/services/database_helper.dart';
 import 'package:agriscan_pro/utils/plant_disease_classifier.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
-import '../services/database_helper.dart'; // Import your new database helper
 
 class TestScreen extends StatefulWidget {
   const TestScreen({super.key});
@@ -46,7 +46,6 @@ class _TestScreenState extends State<TestScreen> {
   }
 
   /// Run test classification
-  /// Run test classification
   Future<void> _runTest() async {
     if (!_modelLoaded) {
       ScaffoldMessenger.of(
@@ -75,15 +74,21 @@ class _TestScreenState extends State<TestScreen> {
         return;
       }
 
-      // 2. Get the full prediction string from your AI classifier
-      final fullPredictionString = await _classifier.classifyPlantDisease(
-        testImage,
-      );
-
       // --- FIX START ---
-      // 3. Extract ONLY the disease name from the full string for the database query.
-      // It splits "Tomato___Late_blight (97.8% confidence)" into two parts and takes the first one.
-      final diseaseName = fullPredictionString.split('(').first.trim();
+      // 2. Get the full Map of predictions from your AI classifier
+      final Map<String, double> predictions = await _classifier
+          .classifyPlantDisease(testImage);
+
+      if (predictions.isEmpty) {
+        throw Exception("Model returned no predictions.");
+      }
+
+      // 3. Find the top prediction (highest confidence) from the Map
+      final topPrediction = predictions.entries.reduce(
+        (a, b) => a.value > b.value ? a : b,
+      );
+      final String diseaseName = topPrediction.key;
+      final double confidence = topPrediction.value;
       // --- FIX END ---
 
       // 4. Get the detailed advice from your database using the clean name
@@ -93,10 +98,13 @@ class _TestScreenState extends State<TestScreen> {
       setState(() {
         _isLoading = false;
         _status = 'Classification completed!';
+        final String formattedPrediction =
+            "$diseaseName (${(confidence * 100).toStringAsFixed(1)}% confidence)";
+
         if (diseaseInfo != null) {
           _result =
               '''
-Prediction: $fullPredictionString
+Prediction: $formattedPrediction
 
 Symptoms:
 ${diseaseInfo.symptoms}
@@ -109,7 +117,7 @@ ${diseaseInfo.prevention}
 ''';
         } else {
           _result =
-              "Prediction: $fullPredictionString\n\n(Details not found in database)";
+              "Prediction: $formattedPrediction\n\n(Details not found in database)";
         }
       });
     } catch (e) {
@@ -216,7 +224,11 @@ ${diseaseInfo.prevention}
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
                         children: [
-                          Icon(Icons.analytics, color: Colors.blue, size: 48),
+                          const Icon(
+                            Icons.analytics,
+                            color: Colors.blue,
+                            size: 48,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             'Prediction Result',
