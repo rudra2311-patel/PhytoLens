@@ -19,6 +19,7 @@ dependencies:
   tflite_flutter: ^0.11.0
   path: ^1.9.0
   sqflite: ^2.3.3
+  image_picker: ^1.0.7
   
   
   
