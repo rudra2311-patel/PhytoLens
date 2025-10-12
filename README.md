@@ -1,16 +1,5 @@
-# agriscan_pro
+AgriScan Pro 🌱
+An AI-powered mobile assistant for farmers that provides instant, offline crop disease diagnosis.
 
-A new Flutter project.
 
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+AgriScan puts an expert agronomist in every farmer's pocket, leveraging on-device machine learning to deliver crucial information in areas with limited or no internet connectivity. This project was built as a comprehensive portfolio piece demonstrating full-stack mobile development, from AI model training to a polished Flutter application.
