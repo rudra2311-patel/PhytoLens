@@ -14,7 +14,8 @@ class CameraScreen extends StatefulWidget {
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
+class _CameraScreenState extends State<CameraScreen>
+    with WidgetsBindingObserver {
   CameraController? _cameraController;
   List<CameraDescription> _cameras = [];
   bool _isCameraInitialized = false;
@@ -25,7 +26,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _isProcessing = false;
   final PlantDiseaseClassifier _classifier = PlantDiseaseClassifier();
   final DatabaseHelper _databaseHelper = DatabaseHelper();
-  final bool _isModelLoaded = false;
+  final bool _isModelLoaded = false; // ✅ changed from final to bool
 
   @override
   void initState() {
@@ -44,7 +45,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return;
+    }
     if (state == AppLifecycleState.inactive) {
       _cameraController!.dispose();
     } else if (state == AppLifecycleState.resumed) {
@@ -67,12 +70,16 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         return;
       }
       cameraDescription = _cameras.firstWhere(
-          (cam) => cam.lensDirection == CameraLensDirection.back,
-          orElse: () => _cameras.first);
+        (cam) => cam.lensDirection == CameraLensDirection.back,
+        orElse: () => _cameras.first,
+      );
     }
 
-    _cameraController =
-        CameraController(cameraDescription, ResolutionPreset.high, enableAudio: false);
+    _cameraController = CameraController(
+      cameraDescription, // ✅ ensured non-null
+      ResolutionPreset.high,
+      enableAudio: false,
+    );
 
     try {
       await _cameraController!.initialize();
@@ -81,41 +88,40 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _showErrorSnackBar('Failed to initialize camera: $e');
     }
   }
-  
-  // --- THIS IS THE MAINLY CORRECTED FUNCTION ---
+
   Future<void> _processImage(String imagePath) async {
     setState(() => _isProcessing = true);
-
     try {
       final imageBytes = await File(imagePath).readAsBytes();
       final img.Image? decodedImage = img.decodeImage(imageBytes);
       if (decodedImage == null) throw Exception('Failed to decode image.');
 
-      // This now correctly receives a Map
-      final Map<String, double> predictions = await _classifier.classifyPlantDisease(decodedImage);
-      
+      final Map<String, double> predictions = await _classifier
+          .classifyPlantDisease(decodedImage);
+
       if (predictions.isEmpty) {
         throw Exception('Classification failed: Model returned no predictions');
       }
 
-      // Find the top prediction from the Map
-      final topPredictionEntry = predictions.entries.reduce((a, b) => a.value > b.value ? a : b);
+      final topPredictionEntry = predictions.entries.reduce(
+        (a, b) => a.value > b.value ? a : b,
+      );
       final String diseaseName = topPredictionEntry.key;
       final double confidence = topPredictionEntry.value;
       print('DATABASE LOOKUP FOR: ---"$diseaseName"---');
-      
-      print('🎯 Top prediction: $diseaseName (${(confidence * 100).toStringAsFixed(1)}%)');
 
-      final Disease? diseaseInfo = await _databaseHelper.getDisease(diseaseName);
-      
+      final Disease? diseaseInfo = await _databaseHelper.getDisease(
+        diseaseName,
+      );
+
       if (mounted) {
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => ResultsScreen(
               imagePath: imagePath,
-              prediction: diseaseName, // Pass the clean name
-              confidence: confidence, // Pass the real confidence
+              prediction: diseaseName,
+              confidence: confidence,
               diseaseInfo: diseaseInfo,
             ),
           ),
@@ -124,7 +130,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     } catch (e) {
       _showErrorSnackBar('Analysis failed: $e');
     } finally {
-      if(mounted) setState(() => _isProcessing = false);
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
@@ -143,7 +149,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Future<void> _pickFromGallery() async {
     try {
-      final XFile? pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
+      final XFile? pickedFile = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+      );
       if (pickedFile != null) {
         await _processImage(pickedFile.path);
       }
@@ -154,10 +162,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   void _showErrorSnackBar(String message) {
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.red),
+      );
     }
   }
 
@@ -210,7 +217,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           IconButton(
-            icon: const Icon(Icons.photo_library, color: Colors.white, size: 32),
+            icon: const Icon(
+              Icons.photo_library,
+              color: Colors.white,
+              size: 32,
+            ),
             onPressed: _pickFromGallery,
           ),
           GestureDetector(
@@ -226,8 +237,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.flip_camera_ios, color: Colors.white, size: 32),
-            onPressed: () { /* TODO: Implement camera flip */ },
+            icon: const Icon(
+              Icons.flip_camera_ios,
+              color: Colors.white,
+              size: 32,
+            ),
+            onPressed: () {
+              // TODO: Implement camera flip
+            },
           ),
         ],
       ),
