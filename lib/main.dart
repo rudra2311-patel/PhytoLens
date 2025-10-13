@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/home_screen.dart';
-import 'screens/test_screen.dart'; // Your test screen
+// Your test screen
 import 'utils/constants.dart';
 
 void main() {
@@ -79,7 +79,7 @@ class AgriScanApp extends StatelessWidget {
       // Your defined routes
       routes: {
         '/': (context) => const HomeScreen(),
-        '/test': (context) => const TestScreen(),
+        
       },
     );
   }
