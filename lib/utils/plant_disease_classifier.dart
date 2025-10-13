@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
@@ -11,8 +10,7 @@ class PlantDiseaseClassifier {
   bool _isModelLoaded = false;
 
   // Ensure this is the correct path to your final model
-  static const String modelPath =
-      'assets/models/plant_disease_rudra_model.tflite';
+  static const String modelPath = 'assets/models/final_model.tflite';
   static const String labelsPath = 'assets/models/labels.txt';
 
   // Model configurations from your notebook
@@ -64,7 +62,9 @@ class PlantDiseaseClassifier {
       _interpreter!.run(input, output);
 
       final results = output[0] as List<double>;
-      final probabilities = _softmax(results);
+
+      // The model already outputs probabilities because we trained with a Softmax layer.
+      final probabilities = results;
 
       final Map<String, double> labeledProbabilities = {};
       for (int i = 0; i < probabilities.length; i++) {
@@ -92,10 +92,14 @@ class PlantDiseaseClassifier {
     int bufferIndex = 0;
     for (var y = 0; y < modelInputSize; y++) {
       for (var x = 0; x < modelInputSize; x++) {
+        // --- CRITICAL FIX START ---
+        // getPixel now returns an int. Use the image package's helper functions
+        // to extract the Red, Green, and Blue channels correctly.
         final pixel = resizedImage.getPixel(x, y);
         inputBytes[bufferIndex++] = img.getRed(pixel).toDouble();
         inputBytes[bufferIndex++] = img.getGreen(pixel).toDouble();
         inputBytes[bufferIndex++] = img.getBlue(pixel).toDouble();
+        // --- CRITICAL FIX END ---
       }
     }
 
