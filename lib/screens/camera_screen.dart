@@ -1,10 +1,10 @@
 import 'dart:io';
-import 'package:agriscan_pro/services/database_helper.dart';
-import 'package:agriscan_pro/utils/plant_disease_classifier.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
+import 'package:agriscan_pro/services/database_helper.dart';
+import 'package:agriscan_pro/utils/plant_disease_classifier.dart';
 import 'results_screen.dart';
 
 class CameraScreen extends StatefulWidget {
@@ -20,13 +20,10 @@ class _CameraScreenState extends State<CameraScreen>
   List<CameraDescription> _cameras = [];
   bool _isCameraInitialized = false;
   bool _isLoading = true;
-  final String _errorMessage = '';
-
-  // AI Integration
   bool _isProcessing = false;
+
   final PlantDiseaseClassifier _classifier = PlantDiseaseClassifier();
   final DatabaseHelper _databaseHelper = DatabaseHelper();
-  final bool _isModelLoaded = false; // ✅ changed from final to bool
 
   @override
   void initState() {
@@ -43,52 +40,94 @@ class _CameraScreenState extends State<CameraScreen>
     super.dispose();
   }
 
+  // ✅ Proper lifecycle handling
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
+    final controller = _cameraController;
+
+    if (controller == null || !controller.value.isInitialized) {
       return;
     }
+
     if (state == AppLifecycleState.inactive) {
-      _cameraController!.dispose();
+      await controller.dispose();
+      _isCameraInitialized = false;
     } else if (state == AppLifecycleState.resumed) {
-      _initializeCamera(_cameraController!.description);
+      await _initializeCamera(controller.description);
     }
   }
 
+  // ✅ Initialize model + camera
   Future<void> _initializeServices() async {
-    setState(() => _isLoading = true);
-    await _classifier.loadModel();
-    await _initializeCamera();
-    setState(() => _isLoading = false);
+    if (mounted) setState(() => _isLoading = true);
+    try {
+      await _classifier.loadModel();
+      await _initializeCamera();
+    } catch (e) {
+      _showErrorSnackBar('Initialization failed: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
-  Future<void> _initializeCamera([CameraDescription? cameraDescription]) async {
-    if (cameraDescription == null) {
+  // ✅ Safe camera initialization
+  Future<void> _initializeCamera([CameraDescription? description]) async {
+    try {
+      _isCameraInitialized = false;
+      await _cameraController?.dispose();
+
       _cameras = await availableCameras();
-      if (_cameras.isEmpty) {
-        _showErrorSnackBar('No cameras found.');
-        return;
-      }
-      cameraDescription = _cameras.firstWhere(
-        (cam) => cam.lensDirection == CameraLensDirection.back,
+      description ??= _cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => _cameras.first,
       );
-    }
 
-    _cameraController = CameraController(
-      cameraDescription, // ✅ ensured non-null
-      ResolutionPreset.high,
-      enableAudio: false,
-    );
+      final controller = CameraController(
+        description,
+        ResolutionPreset.medium, // ✅ medium = more stable on Android
+        enableAudio: false,
+      );
 
-    try {
-      await _cameraController!.initialize();
-      if (mounted) setState(() => _isCameraInitialized = true);
+      _cameraController = controller;
+
+      await controller.initialize();
+      if (!mounted) return;
+
+      setState(() => _isCameraInitialized = true);
     } catch (e) {
-      _showErrorSnackBar('Failed to initialize camera: $e');
+      _showErrorSnackBar('Camera failed: $e');
     }
   }
 
+  // ✅ Take picture and process
+  Future<void> _takePicture() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      _showErrorSnackBar('Camera not ready.');
+      return;
+    }
+    try {
+      final XFile picture = await _cameraController!.takePicture();
+      await _processImage(picture.path);
+    } catch (e) {
+      _showErrorSnackBar('Failed to take picture: $e');
+    }
+  }
+
+  // ✅ Pick image from gallery
+  Future<void> _pickFromGallery() async {
+    try {
+      final XFile? pickedFile = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+      );
+      if (pickedFile != null) {
+        await _processImage(pickedFile.path);
+      }
+    } catch (e) {
+      _showErrorSnackBar('Failed to pick image: $e');
+    }
+  }
+
+  // ✅ AI model processing
   Future<void> _processImage(String imagePath) async {
     setState(() => _isProcessing = true);
     try {
@@ -96,23 +135,20 @@ class _CameraScreenState extends State<CameraScreen>
       final img.Image? decodedImage = img.decodeImage(imageBytes);
       if (decodedImage == null) throw Exception('Failed to decode image.');
 
-      final Map<String, double> predictions = await _classifier
-          .classifyPlantDisease(decodedImage);
+      final predictions = await _classifier.classifyPlantDisease(decodedImage);
 
       if (predictions.isEmpty) {
-        throw Exception('Classification failed: Model returned no predictions');
+        throw Exception('Model returned no predictions');
       }
 
-      final topPredictionEntry = predictions.entries.reduce(
+      final topPrediction = predictions.entries.reduce(
         (a, b) => a.value > b.value ? a : b,
       );
-      final String diseaseName = topPredictionEntry.key;
-      final double confidence = topPredictionEntry.value;
-      print('DATABASE LOOKUP FOR: ---"$diseaseName"---');
 
-      final Disease? diseaseInfo = await _databaseHelper.getDisease(
-        diseaseName,
-      );
+      final diseaseName = topPrediction.key;
+      final confidence = topPrediction.value;
+
+      final diseaseInfo = await _databaseHelper.getDisease(diseaseName);
 
       if (mounted) {
         Navigator.push(
@@ -134,32 +170,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  Future<void> _takePicture() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) {
-      _showErrorSnackBar('Camera not ready.');
-      return;
-    }
-    try {
-      final XFile picture = await _cameraController!.takePicture();
-      await _processImage(picture.path);
-    } catch (e) {
-      _showErrorSnackBar('Failed to take picture: $e');
-    }
-  }
-
-  Future<void> _pickFromGallery() async {
-    try {
-      final XFile? pickedFile = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-      );
-      if (pickedFile != null) {
-        await _processImage(pickedFile.path);
-      }
-    } catch (e) {
-      _showErrorSnackBar('Failed to pick image: $e');
-    }
-  }
-
+  // ✅ Error message helper
   void _showErrorSnackBar(String message) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -168,6 +179,23 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  // ✅ Flip between front & back camera
+  Future<void> _flipCamera() async {
+    if (_cameras.length < 2 || _cameraController == null) return;
+
+    final currentLens = _cameraController!.description.lensDirection;
+    final newDescription = currentLens == CameraLensDirection.back
+        ? _cameras.firstWhere(
+            (c) => c.lensDirection == CameraLensDirection.front,
+          )
+        : _cameras.firstWhere(
+            (c) => c.lensDirection == CameraLensDirection.back,
+          );
+
+    await _initializeCamera(newDescription);
+  }
+
+  // ✅ UI
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -185,10 +213,16 @@ class _CameraScreenState extends State<CameraScreen>
     if (!_isCameraInitialized || _isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        CameraPreview(_cameraController!),
+        if (_cameraController != null && _cameraController!.value.isInitialized)
+          CameraPreview(_cameraController!)
+        else
+          const Center(child: CircularProgressIndicator()),
+
+        // Processing overlay
         if (_isProcessing)
           Container(
             color: Colors.black.withOpacity(0.5),
@@ -203,6 +237,8 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
           ),
+
+        // Controls
         _buildControls(),
       ],
     );
@@ -242,9 +278,7 @@ class _CameraScreenState extends State<CameraScreen>
               color: Colors.white,
               size: 32,
             ),
-            onPressed: () {
-              // TODO: Implement camera flip
-            },
+            onPressed: _flipCamera,
           ),
         ],
       ),
