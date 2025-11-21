@@ -1,37 +1,100 @@
+import 'package:agriscan_pro/screens/scan_screen.dart';
 import 'package:agriscan_pro/services/auth_services.dart';
 import 'package:flutter/material.dart';
 import 'camera_screen.dart';
 import '../utils/constants.dart';
-import '../widgets/common_widgets.dart';
 import '../services/api_services.dart';
+import '../services/farm_database_helper.dart';
+import '../services/weather_alert_service.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
-  get AuthSRervice => null;
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  int _farmsCount = 0;
+  int _scansCount = 0;
+  int _alertsCount = 0;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStatistics();
+    _checkAndCreateAlerts(); // Proactively create alerts on home screen
+  }
+
+  /// Proactively check and create weather alerts for all farms
+  Future<void> _checkAndCreateAlerts() async {
+    try {
+      // Check if user has farms
+      final farmsCount = await FarmDatabaseHelper.instance.getFarmsCount();
+      if (farmsCount > 0) {
+        // Create weather alerts in background (don't block UI)
+        WeatherAlertService.checkAllFarmsWeatherAlerts()
+            .then((_) {
+              debugPrint('✅ Background alert check completed');
+              // Refresh alert count after creating alerts
+              _loadStatistics();
+            })
+            .catchError((e) {
+              debugPrint('⚠️ Background alert check failed: $e');
+            });
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to initiate alert check: $e');
+    }
+  }
+
+  Future<void> _loadStatistics() async {
+    try {
+      final farmsCount = await FarmDatabaseHelper.instance.getFarmsCount();
+      final alertsCount = await FarmDatabaseHelper.instance
+          .getUnreadAlertsCount();
+
+      setState(() {
+        _farmsCount = farmsCount;
+        _scansCount = 0; // Will be updated when scan API is integrated
+        _alertsCount = alertsCount;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
 
   Future<void> _logout(BuildContext context) async {
     try {
-      // 🔥 Try backend logout (uses refresh token)
       await ApiService.logoutUser();
     } catch (e) {
-      // 🧠 If token already revoked or expired, ignore it and continue logout
       if (e.toString().contains("Token has been revoked") ||
           e.toString().contains("Invalid or expired token")) {
         debugPrint(
           "⚠️ Token already revoked or expired — continuing logout...",
         );
       } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Logout failed: $e")));
-        return; // stop for other errors
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text("Logout failed: $e")));
+        }
+        return;
       }
     }
 
-    // ✅ Clear all tokens locally and navigate to login
+    // SECURITY FIX: Clear local database before logout
+    try {
+      await FarmDatabaseHelper.instance.clearAllUserData();
+      debugPrint('✅ Local database cleared');
+    } catch (e) {
+      debugPrint('⚠️ Failed to clear database: $e');
+    }
+
     await AuthService.logout();
-    if (context.mounted) {
+    if (mounted) {
       Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
       ScaffoldMessenger.of(
         context,
@@ -160,7 +223,12 @@ class HomeScreen extends StatelessWidget {
                       subtitle: 'View your previous scans',
                       color: Colors.blue[700]!,
                       isOutlined: true,
-                      onTap: () => _showHistoryComingSoon(context),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ScanHistoryScreen(),
+                        ),
+                      ),
                     ),
 
                     const SizedBox(height: 40),
