@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'package:agriscan_pro/services/api_services.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
@@ -127,48 +129,67 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // ✅ AI model processing
   Future<void> _processImage(String imagePath) async {
-    setState(() => _isProcessing = true);
-    try {
-      final imageBytes = await File(imagePath).readAsBytes();
-      final img.Image? decodedImage = img.decodeImage(imageBytes);
-      if (decodedImage == null) throw Exception('Failed to decode image.');
+  setState(() => _isProcessing = true);
+  try {
+    final imageBytes = await File(imagePath).readAsBytes();
+    final img.Image? decodedImage = img.decodeImage(imageBytes);
+    if (decodedImage == null) throw Exception('Failed to decode image.');
 
-      final predictions = await _classifier.classifyPlantDisease(decodedImage);
+    final predictions = await _classifier.classifyPlantDisease(decodedImage);
 
-      if (predictions.isEmpty) {
-        throw Exception('Model returned no predictions');
-      }
-
-      final topPrediction = predictions.entries.reduce(
-        (a, b) => a.value > b.value ? a : b,
-      );
-
-      final diseaseName = topPrediction.key;
-      final confidence = topPrediction.value;
-
-      final diseaseInfo = await _databaseHelper.getDisease(diseaseName);
-
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ResultsScreen(
-              imagePath: imagePath,
-              prediction: diseaseName,
-              confidence: confidence,
-              diseaseInfo: diseaseInfo,
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      _showErrorSnackBar('Analysis failed: $e');
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
+    if (predictions.isEmpty) {
+      throw Exception('Model returned no predictions');
     }
+
+    final topPrediction = predictions.entries.reduce(
+      (a, b) => a.value > b.value ? a : b,
+    );
+
+    final diseaseName = topPrediction.key;
+    final confidence = topPrediction.value;
+
+    // ------------------ ADDED CODE START ------------------
+
+    // convert image to base64
+    final base64Image = base64Encode(imageBytes);
+
+    // upload scan (does not affect your logic)
+    try {
+      await ApiService.uploadScan(
+        diseaseName: diseaseName,
+        confidence: confidence,
+        imageBase64: base64Image,
+      );
+      print("Scan uploaded successfully");
+    } catch (e) {
+      print("Upload failed: $e");
+    }
+
+    // ------------------ ADDED CODE END --------------------
+
+    final diseaseInfo = await _databaseHelper.getDisease(diseaseName);
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ResultsScreen(
+            imagePath: imagePath,
+            prediction: diseaseName,
+            confidence: confidence,
+            diseaseInfo: diseaseInfo,
+          ),
+        ),
+      );
+    }
+  } catch (e) {
+    _showErrorSnackBar('Analysis failed: $e');
+  } finally {
+    if (mounted) setState(() => _isProcessing = false);
   }
+}
+
 
   // ✅ Error message helper
   void _showErrorSnackBar(String message) {
