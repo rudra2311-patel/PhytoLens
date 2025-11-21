@@ -20,6 +20,13 @@ dependencies:
   path: ^1.9.0
   sqflite: ^2.3.3
   image_picker: ^1.0.7
+  http: ^1.5.0
+  flutter_secure_storage: ^9.0.0
+  intl: ^0.18.1
+  geolocator: 14.0.2 
+  geocoding: ^3.0.0
+  web_socket_channel: ^3.0.1
+
   
   
   
