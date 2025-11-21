@@ -1,5 +1,7 @@
 import 'package:agriscan_pro/services/api_services.dart';
 import 'package:agriscan_pro/services/auth_services.dart';
+import 'package:agriscan_pro/services/farm_database_helper.dart';
+import 'package:agriscan_pro/models/farm_model.dart';
 import 'package:flutter/material.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -16,6 +18,58 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
+  /// Sync farms from backend to local database after login
+  Future<void> _syncFarmsFromBackend() async {
+    try {
+      debugPrint('🔄 Syncing farms from backend...');
+
+      // Fetch farms from backend
+      final backendFarms = await ApiService.getMyFarms();
+      debugPrint('📥 Fetched ${backendFarms.length} farms from backend');
+
+      // Get current user ID
+      final userId = await AuthService.getUserId();
+      if (userId == null) {
+        debugPrint('⚠️ No user ID found, skipping farm sync');
+        return;
+      }
+
+      // Save each farm to local database
+      for (var farmData in backendFarms) {
+        try {
+          // Check if farm already exists in local DB
+          final existingFarm = await FarmDatabaseHelper.instance
+              .getFarmByBackendId(farmData['id'].toString());
+
+          if (existingFarm == null) {
+            // Create new farm in local DB
+            final farm = Farm(
+              backendId: farmData['id'].toString(),
+              userId: userId,
+              name: farmData['name'] ?? 'Farm',
+              location: '${farmData['lat']}, ${farmData['lon']}',
+              latitude: (farmData['lat'] as num).toDouble(),
+              longitude: (farmData['lon'] as num).toDouble(),
+              cropType: farmData['crop'] ?? 'Unknown',
+              createdAt: DateTime.now(),
+            );
+
+            await FarmDatabaseHelper.instance.createFarm(farm);
+            debugPrint('✅ Saved farm to local DB: ${farm.name}');
+          } else {
+            debugPrint('ℹ️ Farm already exists: ${existingFarm.name}');
+          }
+        } catch (e) {
+          debugPrint('⚠️ Failed to save farm: $e');
+        }
+      }
+
+      debugPrint('✅ Farm sync complete');
+    } catch (e) {
+      debugPrint('❌ Failed to sync farms from backend: $e');
+    }
+  }
+
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
@@ -31,6 +85,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // 🔥 store tokens securely (frontend storage, not backend)
       await AuthService.saveTokens(accessToken, refreshToken);
+
+      // 🔐 Extract and save user ID from login response
+      // Backend returns user data in the response
+      if (result['user'] != null && result['user']['user_id'] != null) {
+        await AuthService.saveUserId(result['user']['user_id'].toString());
+        debugPrint('✅ User ID saved: ${result['user']['user_id']}');
+      } else {
+        // Fallback: fetch user profile to get user_id
+        try {
+          final profile = await ApiService.getUserProfile();
+          if (profile['user_id'] != null) {
+            await AuthService.saveUserId(profile['user_id'].toString());
+            debugPrint('✅ User ID saved from profile: ${profile['user_id']}');
+          }
+        } catch (e) {
+          debugPrint('⚠️ Could not fetch user_id: $e');
+        }
+      }
+
+      // 🌾 CRITICAL: Sync farms from backend to local database
+      await _syncFarmsFromBackend();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
