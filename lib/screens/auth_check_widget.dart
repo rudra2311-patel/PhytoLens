@@ -1,6 +1,6 @@
 import 'package:agriscan_pro/services/auth_services.dart';
 import 'package:flutter/material.dart';
-import 'home_screen.dart';
+import 'main_navigation_screen.dart';
 import 'login_screen.dart';
 
 class AuthCheckScreen extends StatefulWidget {
@@ -54,10 +54,10 @@ class _AuthCheckScreenState extends State<AuthCheckScreen> {
           );
         }
 
-        // ✅ if logged in → go to home
+        // ✅ if logged in → go to main navigation screen
         // ❌ else → show login screen
         final loggedIn = snapshot.data ?? false;
-        return loggedIn ? const HomeScreen() : const LoginScreen();
+        return loggedIn ? const MainNavigationScreen() : const LoginScreen();
       },
     );
   }
