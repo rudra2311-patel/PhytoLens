@@ -5,14 +5,18 @@ class AuthService {
   static const _storage = FlutterSecureStorage();
 
   // 💾 Save both tokens securely
-  static Future<void> saveTokens(String accessToken, String refreshToken) async {
+  static Future<void> saveTokens(
+    String accessToken,
+    String refreshToken,
+  ) async {
     await _storage.write(key: "access_token", value: accessToken);
     await _storage.write(key: "refresh_token", value: refreshToken);
     final storedAccess = await AuthService.getAccessToken();
-final storedRefresh = await AuthService.getRefreshToken();
-print("STORED ACCESS TOKEN: $storedAccess");
-print("STORED REFRESH TOKEN: $storedRefresh");    
+    final storedRefresh = await AuthService.getRefreshToken();
+    print("STORED ACCESS TOKEN: $storedAccess");
+    print("STORED REFRESH TOKEN: $storedRefresh");
   }
+
   // 🔑 Get stored access token
   static Future<String?> getAccessToken() async {
     return await _storage.read(key: "access_token");
@@ -26,6 +30,16 @@ print("STORED REFRESH TOKEN: $storedRefresh");
   // 🚪 Logout (delete all tokens)
   static Future<void> logout() async {
     await _storage.deleteAll();
+  }
+
+  // 🔐 Save current user ID
+  static Future<void> saveUserId(String userId) async {
+    await _storage.write(key: "user_id", value: userId);
+  }
+
+  // 🔐 Get current user ID
+  static Future<String?> getUserId() async {
+    return await _storage.read(key: "user_id");
   }
 
   // ✅ Check if user is logged in
