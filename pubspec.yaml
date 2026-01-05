@@ -1,5 +1,5 @@
 name: agriscan_pro
-description: "A new Flutter project."
+description: "PhytoLens - AI-Powered Crop Disease Detection Platform"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
 version: 1.0.0+1
@@ -26,10 +26,10 @@ dependencies:
   geolocator: 14.0.2 
   geocoding: ^3.0.0
   web_socket_channel: ^3.0.1
-
   
-  
-  
+  # Firebase Cloud Messaging
+  firebase_core: ^2.24.2
+  firebase_messaging: ^14.7.9
 
 dev_dependencies:
   flutter_test:
