@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:agriscan_pro/services/auth_services.dart';
 import 'package:http/http.dart' as http;
 
+
 class ApiService {
   // Base URL for auth & scans
   static const String baseUrl = "http://10.0.2.2:8000/api/v1";
@@ -204,6 +205,7 @@ class ApiService {
     required double lat,
     required double lon,
     required String crop,
+    String? name,
   }) async {
     final accessToken = await AuthService.getAccessToken();
     if (accessToken == null) throw Exception('No access token found');
@@ -214,7 +216,12 @@ class ApiService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $accessToken',
       },
-      body: jsonEncode({'lat': lat, 'lon': lon, 'crop': crop}),
+      body: jsonEncode({
+        'lat': lat,
+        'lon': lon,
+        'crop': crop,
+        if (name != null) 'name': name,
+      }),
     );
 
     if (response.statusCode == 200 || response.statusCode == 201) {
@@ -313,6 +320,122 @@ class ApiService {
       return jsonDecode(response.body);
     } else {
       throw Exception('Failed to fetch weather risk: ${response.body}');
+    }
+  }
+
+  // -------------------- FCM NOTIFICATION SECTION -------------------- //
+
+  /// Update FCM token on backend
+  static Future<void> updateFCMToken(String fcmToken) async {
+    final accessToken = await AuthService.getAccessToken();
+
+    if (accessToken == null) {
+      throw Exception('Not authenticated. Please login again.');
+    }
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/fcm/token'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode({'token': fcmToken}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to update FCM token: ${response.body}');
+    }
+  }
+
+  /// Send push notification (backend will use this internally)
+  static Future<void> sendPushNotification({
+    required String userId,
+    required String title,
+    required String body,
+    Map<String, String>? data,
+  }) async {
+    final accessToken = await AuthService.getAccessToken();
+
+    if (accessToken == null) {
+      throw Exception('Not authenticated. Please login again.');
+    }
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/fcm/send'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode({
+        'user_id': userId,
+        'title': title,
+        'body': body,
+        'data': data ?? {},
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to send push notification: ${response.body}');
+    }
+  }
+
+  // -------------------- NOTIFICATION HISTORY SECTION -------------------- //
+
+  /// Fetch user's notification history from backend
+  static Future<Map<String, dynamic>> getNotifications({
+    int limit = 50,
+    int hours = 168, // Default 7 days
+  }) async {
+    final accessToken = await AuthService.getAccessToken();
+
+    if (accessToken == null) {
+      throw Exception('Not authenticated. Please login again.');
+    }
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/notifications/my?limit=$limit&hours=$hours'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    throw Exception('Failed to load notifications: ${response.body}');
+  }
+
+  /// Mark notification as read
+  static Future<void> markNotificationAsRead(String notificationId) async {
+    final accessToken = await AuthService.getAccessToken();
+
+    if (accessToken == null) {
+      throw Exception('Not authenticated. Please login again.');
+    }
+
+    final response = await http.patch(
+      Uri.parse('$baseUrl/notifications/$notificationId/read'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to mark notification as read: ${response.body}');
+    }
+  }
+
+  /// Mark all notifications as read
+  static Future<void> markAllNotificationsAsRead() async {
+    final accessToken = await AuthService.getAccessToken();
+
+    if (accessToken == null) {
+      throw Exception('Not authenticated. Please login again.');
+    }
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/notifications/mark-all-read'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to mark all as read: ${response.body}');
     }
   }
 }
