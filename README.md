@@ -114,29 +114,15 @@ Phytolens bridges the gap between cutting-edge AI technology and agricultural ne
 
 ---
 
-## 📐 Architecture Highlights
+## 📐 Architecture & Screenshots
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     PHYTOLENS ARCHITECTURE                  │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  📱 FLUTTER APP (Offline-First)                            │
-│  ├─ TensorFlow Lite (On-Device ML)                        │
-│  ├─ SQLite (Local Persistence)                            │
-│  ├─ Provider (State Management)                           │
-│  └─ FCM (Push Notifications)                              │
-│                      ↕️                                      │
-│  🌐 WEBSOCKET + REST API                                   │
-│                      ↕️                                      │
-│  ⚙️  FASTAPI BACKEND                                        │
-│  ├─ PostgreSQL (User Data + History)                      │
-│  ├─ Redis (Caching + Session)                             │
-│  ├─ Firebase Admin (FCM Management)                       │
-│  └─ JWT Auth (Secure Access)                              │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+<!-- Add your architecture diagrams and app screenshots here -->
+
+
+
+
+
+
 
 ---
 
