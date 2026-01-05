@@ -1,8 +1,8 @@
 class AppStrings {
-  static const appName = 'AgriScan Pro';
+  static const appName = 'PhytoLens';
   static const scanCrop = 'Scan Your Crop';
   static const history = 'Scan History';
-  static const welcomeTitle = 'Welcome to AgriScan Pro';
+  static const welcomeTitle = 'Welcome to PhytoLens';
   static const welcomeSubtitle =
       'AI-powered crop disease detection at your fingertips';
   static const scanButton = 'Scan Crop Disease';
