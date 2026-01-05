@@ -18,6 +18,23 @@ migrate_working_dir/
 *.iws
 .idea/
 
+# Documentation and sensitive files (DO NOT UPLOAD)
+*.md
+*.txt
+desktop.ini
+
+# Firebase sensitive files
+**/google-services.json
+**/GoogleService-Info.plist
+firebase-adminsdk*.json
+
+# Environment and config files
+.env
+.env.local
+.env.production
+config.json
+secrets.json
+
 # The .vscode folder contains launch configuration and tasks you configure in
 # VS Code which you may wish to be included in version control, so this line
 # is commented out by default.
